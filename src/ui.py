@@ -43,6 +43,10 @@ class AppUI:
         self.progress = ttk.Progressbar(self.control_frame, orient=tk.HORIZONTAL, length=200, mode='determinate')
         self.progress.pack(side=tk.LEFT, padx=10)
 
+        self.opacity_slider = tk.Scale(self.control_frame, from_=0.1, to=1.0, resolution=0.1, orient=tk.HORIZONTAL, label="Opacity", command=self.set_opacity)
+        self.opacity_slider.set(1.0)
+        self.opacity_slider.pack(side=tk.LEFT, padx=10)
+
         self.image_id = None
         self.original_image = None
         self.resize_after_id = None
@@ -101,6 +105,10 @@ class AppUI:
         self.window_locked = not self.window_locked
         self.root.attributes("-topmost", self.window_locked)
         self.lock_button.config(text="Unlock Window" if self.window_locked else "Lock Window")
+
+    def set_opacity(self, value):
+        opacity = float(value)
+        self.root.attributes("-alpha", opacity)
 
 class ImageHandler:
     def __init__(self):

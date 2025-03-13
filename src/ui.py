@@ -5,6 +5,7 @@ from PIL import Image, ImageTk
 import os
 import time
 import threading
+import random
 
 class AppUI:
     def __init__(self, root, image_handler, timer, update_image_callback):
@@ -13,39 +14,51 @@ class AppUI:
         self.timer = timer
         self.update_image_callback = update_image_callback
 
-        self.frame = tk.Frame(root)
-        self.frame.pack(fill=tk.BOTH, expand=True)
+        self.notebook = ttk.Notebook(root)
+        self.notebook.pack(fill=tk.BOTH, expand=True)
 
-        self.canvas = tk.Canvas(self.frame, bg='black')
+        self.main_frame = tk.Frame(self.notebook)
+        self.settings_frame = tk.Frame(self.notebook)
+
+        self.notebook.add(self.main_frame, text="Main")
+        self.notebook.add(self.settings_frame, text="Settings")
+
+        self.canvas = tk.Canvas(self.main_frame, bg='black')
         self.canvas.pack(fill=tk.BOTH, expand=True)
 
-        self.control_frame = tk.Frame(root)
-        self.control_frame.pack(fill=tk.X)
+        self.progress_frame = tk.Frame(self.main_frame)
+        self.progress_frame.pack(fill=tk.X, pady=5)
+
+        self.progress = ttk.Progressbar(self.progress_frame, orient=tk.HORIZONTAL, length=200, mode='determinate')
+        self.progress.pack(fill=tk.X, padx=10)
+
+        self.control_frame = tk.Frame(self.main_frame)
+        self.control_frame.pack(fill=tk.X, pady=5)
 
         self.folder_button = tk.Button(self.control_frame, text="Select Folder", command=self.select_folder)
-        self.folder_button.pack(side=tk.LEFT)
+        self.folder_button.pack(side=tk.LEFT, padx=5)
 
         self.timer_label = tk.Label(self.control_frame, text="Timer (seconds):")
-        self.timer_label.pack(side=tk.LEFT)
+        self.timer_label.pack(side=tk.LEFT, padx=5)
 
-        self.timer_entry = tk.Entry(self.control_frame)
-        self.timer_entry.pack(side=tk.LEFT)
+        self.timer_entry = tk.Entry(self.control_frame, width=5)
+        self.timer_entry.pack(side=tk.LEFT, padx=5)
 
         self.start_button = tk.Button(self.control_frame, text="Start", command=self.start_timer)
-        self.start_button.pack(side=tk.LEFT)
+        self.start_button.pack(side=tk.LEFT, padx=5)
 
         self.stop_button = tk.Button(self.control_frame, text="Stop", command=self.stop_timer)
-        self.stop_button.pack(side=tk.LEFT)
+        self.stop_button.pack(side=tk.LEFT, padx=5)
 
         self.lock_button = tk.Button(self.control_frame, text="Lock Window", command=self.lock_window)
-        self.lock_button.pack(side=tk.LEFT)
-
-        self.progress = ttk.Progressbar(self.control_frame, orient=tk.HORIZONTAL, length=200, mode='determinate')
-        self.progress.pack(side=tk.LEFT, padx=10)
+        self.lock_button.pack(side=tk.LEFT, padx=5)
 
         self.opacity_slider = tk.Scale(self.control_frame, from_=0.1, to=1.0, resolution=0.1, orient=tk.HORIZONTAL, label="Opacity", command=self.set_opacity)
         self.opacity_slider.set(1.0)
         self.opacity_slider.pack(side=tk.LEFT, padx=10)
+
+        self.additional_frame = tk.Frame(self.main_frame)
+        self.additional_frame.pack(fill=tk.X, pady=5)
 
         self.image_id = None
         self.original_image = None
@@ -53,6 +66,21 @@ class AppUI:
         self.window_locked = False
 
         self.root.bind("<Configure>", self.on_resize)
+
+        # Settings tab
+        self.settings_label = tk.Label(self.settings_frame, text="Settings", font=("Arial", 16))
+        self.settings_label.pack(pady=10)
+
+        self.display_method = tk.StringVar(value="name")
+
+        self.name_radio = tk.Radiobutton(self.settings_frame, text="Sort by name", variable=self.display_method, value="name")
+        self.name_radio.pack(anchor=tk.W, padx=10)
+
+        self.random_radio = tk.Radiobutton(self.settings_frame, text="Randomize", variable=self.display_method, value="random")
+        self.random_radio.pack(anchor=tk.W, padx=10)
+
+        self.save_settings_button = tk.Button(self.settings_frame, text="Save Settings", command=self.save_settings)
+        self.save_settings_button.pack(pady=10)
 
     def select_folder(self):
         folder_path = filedialog.askdirectory()
@@ -110,10 +138,22 @@ class AppUI:
         opacity = float(value)
         self.root.attributes("-alpha", opacity)
 
+    def save_settings(self):
+        display_method = self.display_method.get()
+        try:
+            self.image_handler.set_display_method(display_method)
+        except AttributeError:
+            # If the method doesn't exist, set the attribute directly
+            self.image_handler.display_method = display_method
+            if display_method == "name":
+                self.image_handler.images.sort()
+        print(f"Settings saved: Display method = {display_method}")
+
 class ImageHandler:
     def __init__(self):
         self.images = []
         self.current_image_index = 0
+        self.display_method = "name"
 
     def load_images(self, folder_path):
         self.images = []
@@ -127,6 +167,8 @@ class ImageHandler:
                 except Exception as e:
                     print(f"Skipping file {file_path}: {e}")
         self.current_image_index = 0
+        if self.display_method == "name":
+            self.images.sort()
 
     def has_images(self):
         return len(self.images) > 0
@@ -138,7 +180,15 @@ class ImageHandler:
 
     def next_image(self):
         if self.has_images():
-            self.current_image_index = (self.current_image_index + 1) % len(self.images)
+            if self.display_method == "random":
+                self.current_image_index = random.randint(0, len(self.images) - 1)
+            else:
+                self.current_image_index = (self.current_image_index + 1) % len(self.images)
+
+    def set_display_method(self, method):
+        self.display_method = method
+        if method == "name":
+            self.images.sort()
 
 class Timer:
     def __init__(self, update_callback):
@@ -159,7 +209,6 @@ class Timer:
             self.timer_seconds -= 1
             if self.timer_seconds == 0:
                 self.update_callback()
-                self.timer_seconds = int(self.timer_entry.get())
 
     def stop(self):
         self.timer_running = False

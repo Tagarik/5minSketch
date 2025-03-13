@@ -1,10 +1,12 @@
 import os
+import random
 from PIL import Image
 
 class ImageHandler:
     def __init__(self):
         self.images = []
         self.current_image_index = 0
+        self.display_method = "name"
 
     def load_images(self, folder_path):
         self.images = []
@@ -18,6 +20,8 @@ class ImageHandler:
                 except Exception as e:
                     print(f"Skipping file {file_path}: {e}")
         self.current_image_index = 0
+        if self.display_method == "name":
+            self.images.sort()
 
     def has_images(self):
         return len(self.images) > 0
@@ -29,4 +33,12 @@ class ImageHandler:
 
     def next_image(self):
         if self.has_images():
-            self.current_image_index = (self.current_image_index + 1) % len(self.images)
+            if self.display_method == "random":
+                self.current_image_index = random.randint(0, len(self.images) - 1)
+            else:
+                self.current_image_index = (self.current_image_index + 1) % len(self.images)
+
+    def set_display_method(self, method):
+        self.display_method = method
+        if method == "name":
+            self.images.sort()

@@ -1,5 +1,6 @@
 import tkinter as tk
 from tkinter import filedialog
+from tkinter import ttk
 from PIL import Image, ImageTk
 import os
 import time
@@ -36,8 +37,12 @@ class AppUI:
         self.stop_button = tk.Button(self.control_frame, text="Stop", command=self.stop_timer)
         self.stop_button.pack(side=tk.LEFT)
 
+        self.progress = ttk.Progressbar(self.control_frame, orient=tk.HORIZONTAL, length=200, mode='determinate')
+        self.progress.pack(side=tk.LEFT, padx=10)
+
         self.image_id = None
         self.original_image = None
+        self.resize_after_id = None
 
         self.root.bind("<Configure>", self.on_resize)
 
@@ -49,10 +54,15 @@ class AppUI:
 
     def start_timer(self):
         interval = int(self.timer_entry.get())
+        self.progress['maximum'] = interval
+        self.progress['value'] = interval
         self.timer.start(interval)
 
     def stop_timer(self):
         self.timer.stop()
+
+    def update_progress(self, value):
+        self.progress['value'] = value
 
     def display_image(self, image_path):
         try:
@@ -79,8 +89,9 @@ class AppUI:
             self.image_id = self.canvas.create_image(canvas_width // 2, canvas_height // 2, anchor=tk.CENTER, image=self.image)
 
     def on_resize(self, event=None):
-        if self.original_image:
-            self.resize_image()
+        if self.resize_after_id:
+            self.root.after_cancel(self.resize_after_id)
+        self.resize_after_id = self.root.after(200, self.resize_image)
 
 class ImageHandler:
     def __init__(self):

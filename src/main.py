@@ -15,15 +15,17 @@ class ImageViewerApp:
         self.timer = Timer()
         self.ui = AppUI(root, self.image_handler, self.timer, self.update_image)
 
-        self.timer.set_timer_callback(self.on_timer_complete)
+        self.timer.set_timer_callback(self.on_timer_tick)
 
     def update_image(self):
         if self.image_handler.has_images():
             image_path = self.image_handler.get_current_image()
             self.ui.display_image(image_path)
 
-    def on_timer_complete(self):
-        self.root.after(0, self._update_image_and_reset_timer)
+    def on_timer_tick(self, remaining_time):
+        self.ui.update_progress(remaining_time)
+        if remaining_time == 0:
+            self.root.after(0, self._update_image_and_reset_timer)
 
     def _update_image_and_reset_timer(self):
         self.image_handler.next_image()

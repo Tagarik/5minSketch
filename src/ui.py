@@ -37,12 +37,16 @@ class AppUI:
         self.stop_button = tk.Button(self.control_frame, text="Stop", command=self.stop_timer)
         self.stop_button.pack(side=tk.LEFT)
 
+        self.lock_button = tk.Button(self.control_frame, text="Lock Window", command=self.lock_window)
+        self.lock_button.pack(side=tk.LEFT)
+
         self.progress = ttk.Progressbar(self.control_frame, orient=tk.HORIZONTAL, length=200, mode='determinate')
         self.progress.pack(side=tk.LEFT, padx=10)
 
         self.image_id = None
         self.original_image = None
         self.resize_after_id = None
+        self.window_locked = False
 
         self.root.bind("<Configure>", self.on_resize)
 
@@ -92,6 +96,11 @@ class AppUI:
         if self.resize_after_id:
             self.root.after_cancel(self.resize_after_id)
         self.resize_after_id = self.root.after(200, self.resize_image)
+
+    def lock_window(self):
+        self.window_locked = not self.window_locked
+        self.root.attributes("-topmost", self.window_locked)
+        self.lock_button.config(text="Unlock Window" if self.window_locked else "Lock Window")
 
 class ImageHandler:
     def __init__(self):

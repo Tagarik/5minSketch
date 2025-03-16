@@ -1,10 +1,9 @@
 import os
 import time
 import tkinter as tk
-from tkinter import filedialog
-from image_handler import ImageHandler
-from timer import Timer
-from ui import AppUI
+from src.image_handler import ImageHandler
+from src.timer import Timer
+from src.ui import AppUI
 
 class ImageViewerApp:
     def __init__(self, root):

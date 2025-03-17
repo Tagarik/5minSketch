@@ -43,11 +43,9 @@ class AppUI:
         self.timer_entry = tk.Entry(self.control_frame, width=5)
         self.timer_entry.pack(side=tk.LEFT, padx=5)
 
-        self.start_button = tk.Button(self.control_frame, text="Start", command=self.start_timer)
-        self.start_button.pack(side=tk.LEFT, padx=5)
-
-        self.stop_button = tk.Button(self.control_frame, text="Stop", command=self.stop_timer)
-        self.stop_button.pack(side=tk.LEFT, padx=5)
+        self.timer_running = False
+        self.toggle_timer_button = tk.Button(self.control_frame, text="Start Timer", command=self.toggle_timer)
+        self.toggle_timer_button.pack(side=tk.LEFT, padx=5)
 
         self.lock_button = tk.Button(self.control_frame, text="Lock Window", command=self.lock_window)
         self.lock_button.pack(side=tk.LEFT, padx=5)
@@ -86,6 +84,19 @@ class AppUI:
         if folder_path:
             self.image_handler.load_images(folder_path)
             self.update_image_callback()
+
+    def toggle_timer(self):
+        if self.timer_running:
+            self.timer.stop()
+            self.timer_running = False
+            self.toggle_timer_button.config(text="Start Timer")
+        else:
+            interval = int(self.timer_entry.get())
+            self.progress['maximum'] = interval
+            self.progress['value'] = interval
+            self.timer.start(interval)
+            self.timer_running = True
+            self.toggle_timer_button.config(text="Stop Timer")
 
     def start_timer(self):
         interval = int(self.timer_entry.get())
@@ -213,6 +224,7 @@ class Timer:
         self.timer_running = False
         if self.timer_thread:
             self.timer_thread.join()
+
 
 def update_image():
     image_path = image_handler.get_current_image()

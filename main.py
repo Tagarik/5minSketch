@@ -8,13 +8,17 @@ from src.ui import AppUI
 class ImageViewerApp:
     def __init__(self, root):
         self.root = root
-        self.root.title("Image Viewer App")
+        self.root.title("5 minute sketcher")
         
         self.image_handler = ImageHandler()
         self.timer = Timer()
         self.ui = AppUI(root, self.image_handler, self.timer, self.update_image)
 
         self.timer.set_timer_callback(self.on_timer_tick)
+        
+        # Bind arrow keys for navigation
+        self.root.bind("<Left>", self.previous_image)
+        self.root.bind("<Right>", self.next_image)
 
     def update_image(self):
         if self.image_handler.has_images():
@@ -30,6 +34,14 @@ class ImageViewerApp:
         self.image_handler.next_image()
         self.update_image()
         self.timer.reset()
+        
+    def next_image(self, event=None):
+        self.image_handler.next_image()
+        self.update_image()
+        
+    def previous_image(self, event=None):
+        self.image_handler.previous_image()  # We'll need to add this method
+        self.update_image()
 
     def run(self):
         self.root.mainloop()

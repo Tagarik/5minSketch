@@ -38,6 +38,13 @@ class ImageHandler:
             else:
                 self.current_image_index = (self.current_image_index + 1) % len(self.images)
 
+    def previous_image(self):
+        if self.has_images():
+            if self.display_method == "random":
+                self.current_image_index = random.randint(0, len(self.images) - 1)
+            else:
+                self.current_image_index = (self.current_image_index - 1) % len(self.images)
+
     def set_display_method(self, method):
         self.display_method = method
         if method == "name":

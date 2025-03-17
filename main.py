@@ -21,6 +21,11 @@ class ImageViewerApp:
         self.root.bind("<Left>", self.previous_image)
         self.root.bind("<Right>", self.next_image)
 
+        # If mouse wheel events aren't being properly captured
+        self.root.bind_all("<MouseWheel>", self._on_mouse_wheel)
+        self.root.bind_all("<Button-4>", self._on_mouse_wheel)
+        self.root.bind_all("<Button-5>", self._on_mouse_wheel)
+
     def update_image(self):
         if self.image_handler.has_images():
             image_path = self.image_handler.get_current_image()
@@ -43,6 +48,10 @@ class ImageViewerApp:
     def previous_image(self, event=None):
         self.image_handler.previous_image()  # We'll need to add this method
         self.update_image()
+
+    def _on_mouse_wheel(self, event):
+        """Pass mouse wheel events to the UI"""
+        self.ui.on_mouse_wheel(event)
 
     def run(self):
         self.root.mainloop()

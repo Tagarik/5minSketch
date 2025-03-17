@@ -24,6 +24,8 @@ class AppUI:
 
         self.canvas = tk.Canvas(self.main_frame, bg='black')
         self.canvas.pack(fill=tk.BOTH, expand=True)
+        self.canvas.config(highlightthickness=0)
+        self.canvas.focus_set()  # Ensure the canvas can receive events
 
         self.progress_frame = tk.Frame(self.main_frame)
         self.progress_frame.pack(fill=tk.X, pady=5)
@@ -85,6 +87,20 @@ class AppUI:
 
         self.save_settings_button = tk.Button(self.settings_frame, text="Save Settings", command=self.save_settings)
         self.save_settings_button.pack(pady=10)
+
+        self.zoom_factor = 1.0
+        self.pan_x = 0
+        self.pan_y = 0
+        self.drag_start_x = 0
+        self.drag_start_y = 0
+        self.is_dragging = False
+        
+        self.canvas.bind("<MouseWheel>", self.on_mouse_wheel)  # Windows
+        self.canvas.bind("<Button-4>", self.on_mouse_wheel)    # Linux scroll up
+        self.canvas.bind("<Button-5>", self.on_mouse_wheel)    # Linux scroll down
+        self.canvas.bind("<ButtonPress-1>", self.on_drag_start)
+        self.canvas.bind("<B1-Motion>", self.on_drag_motion)
+        self.canvas.bind("<ButtonRelease-1>", self.on_drag_end)
 
     def select_folder(self):
         folder_path = filedialog.askdirectory()
@@ -151,25 +167,6 @@ class AppUI:
         except Exception as e:
             print(f"Error loading image {image_path}: {e}")
 
-    def resize_image(self):
-        if self.original_image:
-            canvas_width = self.canvas.winfo_width()
-            canvas_height = self.canvas.winfo_height()
-            image_width, image_height = self.original_image.size
-
-            scale = min(canvas_width / image_width, canvas_height / image_height)
-            new_width = int(image_width * scale)
-            new_height = int(image_height * scale)
-
-            resized_image = self.original_image.resize((new_width, new_height), Image.LANCZOS)
-            processed_image = self.process_image(resized_image)
-            
-            self.image = ImageTk.PhotoImage(processed_image)
-
-            if self.image_id:
-                self.canvas.delete(self.image_id)
-            self.image_id = self.canvas.create_image(canvas_width // 2, canvas_height // 2, anchor=tk.CENTER, image=self.image)
-
     def on_resize(self, event=None):
         if self.resize_after_id:
             self.root.after_cancel(self.resize_after_id)
@@ -208,6 +205,111 @@ class AppUI:
         if self.monochrome_mode:
             return ImageOps.grayscale(img)
         return img
+
+    # Add these new methods for zoom and pan
+    def on_mouse_wheel(self, event):
+        """Handle mouse wheel events for zooming"""
+        if not self.original_image:
+            return
+            
+        # Store old zoom factor for ratio calculation
+        old_zoom = self.zoom_factor
+        
+        # Get canvas coordinates of the mouse
+        canvas_x = self.canvas.canvasx(event.x)
+        canvas_y = self.canvas.canvasy(event.y)
+        
+        # Get center position of the image
+        canvas_width = self.canvas.winfo_width()
+        canvas_height = self.canvas.winfo_height()
+        center_x = canvas_width // 2 + self.pan_x
+        center_y = canvas_height // 2 + self.pan_y
+        
+        # Calculate mouse position relative to image center
+        mouse_x = canvas_x - center_x
+        mouse_y = canvas_y - center_y
+        
+        # Determine zoom direction
+        if event.num == 5 or event.delta < 0:  # Scroll down or negative delta
+            self.zoom_factor = max(0.1, self.zoom_factor - 0.1)
+        elif event.num == 4 or event.delta > 0:  # Scroll up or positive delta
+            self.zoom_factor = min(5.0, self.zoom_factor + 0.1)
+        
+        # Reset pan if we're back to zoom level 1
+        if abs(self.zoom_factor - 1.0) < 0.05:
+            self.zoom_factor = 1.0
+            self.pan_x = 0
+            self.pan_y = 0
+        else:
+            # Adjust pan to keep mouse cursor position stable
+            zoom_ratio = self.zoom_factor / old_zoom
+            # Calculate how much the image coordinates would shift due to zoom
+            new_mouse_x = mouse_x * zoom_ratio
+            new_mouse_y = mouse_y * zoom_ratio
+            # Adjust pan to compensate for the shift
+            self.pan_x += (mouse_x - new_mouse_x)
+            self.pan_y += (mouse_y - new_mouse_y)
+            
+        self.resize_image()
+        
+    def on_drag_start(self, event):
+        """Begin dragging to pan the image"""
+        if self.zoom_factor > 1.0:  # Only enable panning when zoomed in
+            self.is_dragging = True
+            self.drag_start_x = event.x
+            self.drag_start_y = event.y
+    
+    def on_drag_motion(self, event):
+        """Pan the image as the mouse is dragged"""
+        if self.is_dragging:
+            # Calculate the distance moved
+            dx = event.x - self.drag_start_x
+            dy = event.y - self.drag_start_y
+            
+            self.pan_x += dx
+            self.pan_y += dy
+            
+            self.drag_start_x = event.x
+            self.drag_start_y = event.y
+            
+            # Redraw with new pan values
+            self.resize_image()
+    
+    def on_drag_end(self, event):
+        """End the dragging operation"""
+        self.is_dragging = False
+    
+    def resize_image(self):
+        if self.original_image:
+            canvas_width = self.canvas.winfo_width()
+            canvas_height = self.canvas.winfo_height()
+            image_width, image_height = self.original_image.size
+
+            base_scale = min(canvas_width / image_width, canvas_height / image_height)
+            
+            # zoom factor
+            scale = base_scale * self.zoom_factor
+            
+            new_width = int(image_width * scale)
+            new_height = int(image_height * scale)
+
+            # Resize
+            resized_image = self.original_image.resize((new_width, new_height), Image.LANCZOS)
+            
+            # Apply any processing (eg. monochrome)
+            processed_image = self.process_image(resized_image)
+            
+            self.image = ImageTk.PhotoImage(processed_image)
+
+            if self.image_id:
+                self.canvas.delete(self.image_id)
+                
+            # Calculate center position
+            center_x = canvas_width // 2 + self.pan_x
+            center_y = canvas_height // 2 + self.pan_y
+            
+            # Create final image
+            self.image_id = self.canvas.create_image(center_x, center_y, anchor=tk.CENTER, image=self.image)
 
 class ImageHandler:
     def __init__(self):

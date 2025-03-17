@@ -1,6 +1,6 @@
 import tkinter as tk
 from tkinter import filedialog, ttk
-from PIL import Image, ImageTk
+from PIL import Image, ImageTk, ImageOps
 import os
 import time
 import threading
@@ -31,13 +31,16 @@ class AppUI:
         self.progress = ttk.Progressbar(self.progress_frame, orient=tk.HORIZONTAL, length=200, mode='determinate')
         self.progress.pack(fill=tk.X, padx=10)
 
+        self.time_label = tk.Label(self.progress_frame, text="0:00", font=("Arial", 12))
+        self.time_label.pack(pady=5)
+
         self.control_frame = tk.Frame(self.main_frame)
         self.control_frame.pack(fill=tk.X, pady=5)
 
         self.folder_button = tk.Button(self.control_frame, text="Select Folder", command=self.select_folder)
         self.folder_button.pack(side=tk.LEFT, padx=5)
 
-        self.timer_label = tk.Label(self.control_frame, text="Timer (seconds):")
+        self.timer_label = tk.Label(self.control_frame, text="Timer (minutes):")
         self.timer_label.pack(side=tk.LEFT, padx=5)
 
         self.timer_entry = tk.Entry(self.control_frame, width=5)
@@ -53,6 +56,10 @@ class AppUI:
         self.opacity_slider = tk.Scale(self.control_frame, from_=0.1, to=1.0, resolution=0.1, orient=tk.HORIZONTAL, label="Opacity", command=self.set_opacity)
         self.opacity_slider.set(1.0)
         self.opacity_slider.pack(side=tk.LEFT, padx=10)
+
+        self.monochrome_mode = False
+        self.monochrome_button = tk.Button(self.control_frame, text="Monochrome: Off", command=self.toggle_monochrome)
+        self.monochrome_button.pack(side=tk.LEFT, padx=5)
 
         self.additional_frame = tk.Frame(self.main_frame)
         self.additional_frame.pack(fill=tk.X, pady=5)
@@ -91,12 +98,27 @@ class AppUI:
             self.timer_running = False
             self.toggle_timer_button.config(text="Start Timer")
         else:
-            interval = int(self.timer_entry.get())
-            self.progress['maximum'] = interval
-            self.progress['value'] = interval
-            self.timer.start(interval)
-            self.timer_running = True
-            self.toggle_timer_button.config(text="Stop Timer")
+            try:
+                # Convert minutes to seconds, allow for float values
+                minutes = float(self.timer_entry.get())
+                seconds = int(minutes * 60)
+                
+                # Ensure we have at least 1 second
+                seconds = max(1, seconds)
+                
+                self.progress['maximum'] = seconds
+                self.progress['value'] = seconds
+                
+                # Update the time display with the initial value
+                formatted_time = self.format_time(seconds)
+                self.time_label.config(text=formatted_time)
+                
+                self.timer.start(seconds)
+                self.timer_running = True
+                self.toggle_timer_button.config(text="Stop Timer")
+            except ValueError:
+                # Handle invalid input
+                print("Please enter a valid number of minutes")
 
     def start_timer(self):
         interval = int(self.timer_entry.get())
@@ -107,8 +129,20 @@ class AppUI:
     def stop_timer(self):
         self.timer.stop()
 
+    def format_time(self, seconds):
+        """Convert seconds to minutes:seconds format"""
+        minutes = seconds // 60
+        remaining_seconds = seconds % 60
+        return f"{minutes}:{remaining_seconds:02d}"
+
     def update_progress(self, value):
         self.progress['value'] = value
+        
+        # Update the progress bar text to show the formatted time
+        formatted_time = self.format_time(value)
+        
+        # Then update it here:
+        self.time_label.config(text=formatted_time)
 
     def display_image(self, image_path):
         try:
@@ -128,7 +162,9 @@ class AppUI:
             new_height = int(image_height * scale)
 
             resized_image = self.original_image.resize((new_width, new_height), Image.LANCZOS)
-            self.image = ImageTk.PhotoImage(resized_image)
+            processed_image = self.process_image(resized_image)
+            
+            self.image = ImageTk.PhotoImage(processed_image)
 
             if self.image_id:
                 self.canvas.delete(self.image_id)
@@ -158,6 +194,20 @@ class AppUI:
             if display_method == "name":
                 self.image_handler.images.sort()
         print(f"Settings saved: Display method = {display_method}")
+
+    def toggle_monochrome(self):
+        self.monochrome_mode = not self.monochrome_mode
+        self.monochrome_button.config(text=f"Monochrome: {'On' if self.monochrome_mode else 'Off'}")
+        
+        # Refresh the current image to apply the effect
+        if self.original_image:
+            self.resize_image()
+    
+    def process_image(self, img):
+        """Apply image processing based on current settings"""
+        if self.monochrome_mode:
+            return ImageOps.grayscale(img)
+        return img
 
 class ImageHandler:
     def __init__(self):

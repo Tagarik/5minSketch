@@ -9,6 +9,7 @@ class ImageViewerApp:
     def __init__(self, root):
         self.root = root
         self.root.title("5 minute sketcher")
+        self.root.geometry("650x600")
         
         self.image_handler = ImageHandler()
         self.timer = Timer()

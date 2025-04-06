@@ -62,6 +62,17 @@ class AppUI:
         self.monochrome_mode = False
         self.monochrome_button = tk.Button(self.control_frame, text="Monochrome: Off", command=self.toggle_monochrome)
         self.monochrome_button.pack(side=tk.LEFT, padx=5)
+        
+        # Add zoom dropdown menu
+        self.zoom_label = tk.Label(self.control_frame, text="Zoom:")
+        self.zoom_label.pack(side=tk.LEFT, padx=5)
+        
+        self.zoom_var = tk.StringVar(value="100%")
+        self.zoom_options = ["100%", "125%", "150%", "200%", "300%"]
+        self.zoom_dropdown = ttk.Combobox(self.control_frame, textvariable=self.zoom_var, 
+                                          values=self.zoom_options, width=5, state="readonly")
+        self.zoom_dropdown.pack(side=tk.LEFT, padx=5)
+        self.zoom_dropdown.bind("<<ComboboxSelected>>", self.on_zoom_selected)
 
         self.additional_frame = tk.Frame(self.main_frame)
         self.additional_frame.pack(fill=tk.X, pady=5)
@@ -101,6 +112,13 @@ class AppUI:
         self.canvas.bind("<ButtonPress-1>", self.on_drag_start)
         self.canvas.bind("<B1-Motion>", self.on_drag_motion)
         self.canvas.bind("<ButtonRelease-1>", self.on_drag_end)
+
+        self.zoom_cache = {}  # Cache for different zoom levels
+        self.max_cache_entries = 10  # Limit cache size
+
+        self.zoom_presets = [1.0, 1.25, 1.5, 2.0, 3.0]  # The 5 zoom presets
+        self.current_zoom_index = 0  # Start at 1x zoom (index 0)
+        self.zoom_factor = self.zoom_presets[self.current_zoom_index]
 
     def select_folder(self):
         folder_path = filedialog.askdirectory()
@@ -162,7 +180,57 @@ class AppUI:
 
     def display_image(self, image_path):
         try:
-            self.original_image = Image.open(image_path)
+            # Clear the zoom cache when loading a new image
+            self.zoom_cache.clear()
+            
+            # Reset zoom and pan values
+            self.current_zoom_index = 0
+            self.zoom_factor = self.zoom_presets[self.current_zoom_index]
+            self.pan_x = 0
+            self.pan_y = 0
+            
+            # Reset zoom dropdown to match
+            self.zoom_var.set(f"{int(self.zoom_factor * 100)}%")
+            
+            # Load the original image 
+            original = Image.open(image_path)
+            
+            # Check for alpha channel
+            if original.mode == 'RGBA':
+                # Create a white background
+                background = Image.new('RGB', original.size, (255, 255, 255))
+                # Composite the image onto the background
+                original = Image.alpha_composite(background.convert('RGBA'), original).convert('RGB')
+            
+            # Check if image needs to be resized for performance
+            width, height = original.size
+            max_dimension = max(width, height)
+            
+            if max_dimension > 2000:
+                # Calculate the scaling factor to reduce to 1500px max dimension
+                scale_factor = 1500 / max_dimension
+                new_width = int(width * scale_factor)
+                new_height = int(height * scale_factor)
+                
+                # Resize the image while maintaining aspect ratio
+                self.original_image = original.resize((new_width, new_height), Image.NEAREST)
+                print(f"Resized large image from {width}x{height} to {new_width}x{new_height} for performance")
+            else:
+                # Use the original image if it's already smaller than the threshold
+                self.original_image = original
+            
+            # Delete existing image on canvas if any
+            if self.image_id:
+                self.canvas.delete(self.image_id)
+                self.image_id = None
+                
+            # Force reference clearing for any previous image
+            self.image = None
+            
+            # Pre-cache all zoom levels
+            self.precache_zoom_levels()
+                
+            # Now resize with fresh state
             self.resize_image()
         except Exception as e:
             print(f"Error loading image {image_path}: {e}")
@@ -208,12 +276,13 @@ class AppUI:
 
     # Add these new methods for zoom and pan
     def on_mouse_wheel(self, event):
-        """Handle mouse wheel events for zooming"""
+        """Handle mouse wheel events with discrete zoom presets"""
         if not self.original_image:
             return
-            
+        
         # Store old zoom factor for ratio calculation
         old_zoom = self.zoom_factor
+        old_zoom_index = self.current_zoom_index
         
         # Get canvas coordinates of the mouse
         canvas_x = self.canvas.canvasx(event.x)
@@ -229,15 +298,20 @@ class AppUI:
         mouse_x = canvas_x - center_x
         mouse_y = canvas_y - center_y
         
-        # Determine zoom direction
-        if event.num == 5 or event.delta < 0:  # Scroll down or negative delta
-            self.zoom_factor = max(0.1, self.zoom_factor - 0.1)
-        elif event.num == 4 or event.delta > 0:  # Scroll up or positive delta
-            self.zoom_factor = min(5.0, self.zoom_factor + 0.1)
+        # Determine zoom direction with preset increments
+        if event.num == 5 or event.delta < 0:  # Scroll down or negative delta - zoom out
+            self.current_zoom_index = max(0, self.current_zoom_index - 1)
+        elif event.num == 4 or event.delta > 0:  # Scroll up or positive delta - zoom in
+            self.current_zoom_index = min(len(self.zoom_presets) - 1, self.current_zoom_index + 1)
+        
+        # Get the new zoom factor from presets
+        self.zoom_factor = self.zoom_presets[self.current_zoom_index]
+        
+        # Update the zoom dropdown to match
+        self.zoom_var.set(f"{int(self.zoom_factor * 100)}%")
         
         # Reset pan if we're back to zoom level 1
-        if abs(self.zoom_factor - 1.0) < 0.05:
-            self.zoom_factor = 1.0
+        if self.zoom_factor == 1.0:
             self.pan_x = 0
             self.pan_y = 0
         else:
@@ -249,67 +323,197 @@ class AppUI:
             # Adjust pan to compensate for the shift
             self.pan_x += (mouse_x - new_mouse_x)
             self.pan_y += (mouse_y - new_mouse_y)
-            
-        self.resize_image()
         
+        # Use the resize_image method to update the view
+        self.resize_image()
+
     def on_drag_start(self, event):
-        """Begin dragging to pan the image"""
-        if self.zoom_factor > 1.0:  # Only enable panning when zoomed in
-            self.is_dragging = True
-            self.drag_start_x = event.x
-            self.drag_start_y = event.y
-    
+        """Begin dragging to pan the image - always allowed but with limits"""
+        self.is_dragging = True
+        self.drag_start_x = event.x
+        self.drag_start_y = event.y
+
     def on_drag_motion(self, event):
-        """Pan the image as the mouse is dragged"""
+        """Pan the image as the mouse is dragged with incremental rendering"""
         if self.is_dragging:
             # Calculate the distance moved
             dx = event.x - self.drag_start_x
             dy = event.y - self.drag_start_y
             
-            self.pan_x += dx
-            self.pan_y += dy
+            # Calculate current image dimensions
+            canvas_width = self.canvas.winfo_width()
+            canvas_height = self.canvas.winfo_height()
+            
+            if self.zoom_factor >= 1.0:
+                # When zoomed in, allow full panning
+                self.pan_x += dx
+                self.pan_y += dy
+            else:
+                # When zoomed out, limit panning proportionally to zoom level
+                pan_limit = 100 * self.zoom_factor
+                
+                # Calculate new pan position
+                new_pan_x = self.pan_x + dx
+                new_pan_y = self.pan_y + dy
+                
+                # Apply stricter limits when zoomed out
+                self.pan_x = max(-pan_limit, min(pan_limit, new_pan_x))
+                self.pan_y = max(-pan_limit, min(pan_limit, new_pan_y))
             
             self.drag_start_x = event.x
             self.drag_start_y = event.y
             
-            # Redraw with new pan values
-            self.resize_image()
-    
-    def on_drag_end(self, event):
-        """End the dragging operation"""
-        self.is_dragging = False
-    
-    def resize_image(self):
-        if self.original_image:
-            canvas_width = self.canvas.winfo_width()
-            canvas_height = self.canvas.winfo_height()
-            image_width, image_height = self.original_image.size
+            # Use very fast mode during active dragging
+            self.resize_image(very_fast_mode=True)
+            
+            # Cancel any pending quality upgrades
+            if hasattr(self, 'drag_fast_quality_id') and self.drag_fast_quality_id:
+                self.root.after_cancel(self.drag_fast_quality_id)
+                
+            if hasattr(self, 'drag_high_quality_id') and self.drag_high_quality_id:
+                self.root.after_cancel(self.drag_high_quality_id)
+            
+            # Schedule quality upgrades with delay
+            self.drag_fast_quality_id = self.root.after(50, lambda: self.resize_image(fast_mode=True))
 
-            base_scale = min(canvas_width / image_width, canvas_height / image_height)
+    def on_drag_end(self, event):
+        """End the dragging operation but keep using fast rendering"""
+        self.is_dragging = False
+        
+        # No longer schedule high-quality rendering to maintain speed
+        # self.root.after(100, lambda: self.resize_image(fast_mode=False))
+    
+    def resize_image(self, fast_mode=True, very_fast_mode=True):  # Changed defaults to True
+        """Resize image with quality level based on interaction state"""
+        if not self.original_image:
+            return
+        
+        canvas_width = self.canvas.winfo_width()
+        canvas_height = self.canvas.winfo_height()
+        
+        # Skip if canvas isn't properly sized yet
+        if canvas_width <= 1 or canvas_height <= 1:
+            return
             
-            # zoom factor
-            scale = base_scale * self.zoom_factor
+        image_width, image_height = self.original_image.size
+        
+        # Use the zoom cache
+        img_id = id(self.original_image)
+        cache_key = f"{img_id}_{self.zoom_factor:.1f}"
+        
+        if cache_key in self.zoom_cache:
+            processed_image = self.zoom_cache[cache_key]
+            self.display_processed_image(processed_image)
+            return
+        
+        # Calculate scaling
+        base_scale = min(canvas_width / image_width, canvas_height / image_height)
+        scale = base_scale * self.zoom_factor
+        
+        new_width = int(image_width * scale)
+        new_height = int(image_height * scale)
+        
+        # Simple approach: always use NEAREST for all resize operations
+        resample_method = Image.NEAREST
+        temp_width, temp_height = new_width, new_height
+        
+        # Resize the image
+        resized_image = self.original_image.resize((temp_width, temp_height), resample_method)
+        
+        processed_image = self.process_image(resized_image)
+        
+        # Only cache high quality images
+        if not very_fast_mode and not fast_mode:
+            if len(self.zoom_cache) >= self.max_cache_entries:
+                self.zoom_cache.pop(next(iter(self.zoom_cache)))
+            self.zoom_cache[cache_key] = processed_image
+        
+        # Display the image
+        self.display_processed_image(processed_image)
+
+    def display_processed_image(self, processed_image):
+        """Display a processed image on the canvas"""
+        self.image = ImageTk.PhotoImage(processed_image)
+        
+        if self.image_id:
+            self.canvas.delete(self.image_id)
+        
+        canvas_width = self.canvas.winfo_width()
+        canvas_height = self.canvas.winfo_height()
+        center_x = canvas_width // 2 + self.pan_x
+        center_y = canvas_height // 2 + self.pan_y
+        
+        self.image_id = self.canvas.create_image(center_x, center_y, anchor=tk.CENTER, image=self.image)
+
+    def precache_zoom_levels(self):
+        """Pre-cache all zoom preset levels for smoother zooming"""
+        if not self.original_image:
+            return
             
+        canvas_width = self.canvas.winfo_width()
+        canvas_height = self.canvas.winfo_height()
+        
+        # Skip if canvas isn't properly sized yet
+        if canvas_width <= 1 or canvas_height <= 1:
+            return
+            
+        image_width, image_height = self.original_image.size
+        
+        # Calculate base scale once
+        base_scale = min(canvas_width / image_width, canvas_height / image_height)
+        
+        # Pre-cache images for all zoom presets (except 1.0 which will be cached on first display)
+        for zoom_level in self.zoom_presets[1:]:  # Skip 1.0 as it will be done immediately
+            scale = base_scale * zoom_level
             new_width = int(image_width * scale)
             new_height = int(image_height * scale)
-
-            # Resize
-            resized_image = self.original_image.resize((new_width, new_height), Image.LANCZOS)
             
-            # Apply any processing (eg. monochrome)
+            # Generate cache key
+            img_id = id(self.original_image)
+            cache_key = f"{img_id}_{zoom_level:.2f}"
+            
+            # Skip if already cached
+            if cache_key in self.zoom_cache:
+                continue
+                
+            # Resize with NEAREST for consistent appearance
+            resized_image = self.original_image.resize((new_width, new_height), Image.NEAREST)
             processed_image = self.process_image(resized_image)
             
-            self.image = ImageTk.PhotoImage(processed_image)
-
-            if self.image_id:
-                self.canvas.delete(self.image_id)
-                
-            # Calculate center position
-            center_x = canvas_width // 2 + self.pan_x
-            center_y = canvas_height // 2 + self.pan_y
+            # Cache the processed image
+            self.zoom_cache[cache_key] = processed_image
             
-            # Create final image
-            self.image_id = self.canvas.create_image(center_x, center_y, anchor=tk.CENTER, image=self.image)
+            print(f"Cached zoom level: {zoom_level:.2f}")
+
+    def on_zoom_selected(self, event=None):
+        """Handle zoom dropdown selection"""
+        if not self.original_image:
+            return
+            
+        # Get the selected zoom level from the dropdown (remove % and convert to float)
+        selected_zoom = self.zoom_var.get().rstrip('%')
+        zoom_factor = float(selected_zoom) / 100.0
+        
+        # Find the closest preset zoom level
+        closest_index = 0
+        min_diff = float('inf')
+        for i, preset in enumerate(self.zoom_presets):
+            diff = abs(preset - zoom_factor)
+            if diff < min_diff:
+                min_diff = diff
+                closest_index = i
+        
+        # Update the current zoom index and factor
+        self.current_zoom_index = closest_index
+        self.zoom_factor = self.zoom_presets[self.current_zoom_index]
+        
+        # Reset pan if we're back to zoom level 1
+        if self.zoom_factor == 1.0:
+            self.pan_x = 0
+            self.pan_y = 0
+        
+        # Update the image with the new zoom level
+        self.resize_image()
 
 class ImageHandler:
     def __init__(self):
